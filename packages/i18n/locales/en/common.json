@@ -132,6 +132,8 @@
   "just_connected_description": "You've just connected. Please book from above slots or retry later.",
   "please_try_again_later_or_book_another_slot": "You've just tried connecting now. Please try again later in {{remaining}} minutes or book another slot from the booking page.",
   "unavailable_timeslot_title": "Unavailable timeslot",
+  "outside_business_hours_title": "Outside business hours",
+  "outside_business_hours_description": "This slot starts at {{slotTime}} for the organizer ({{timeZone}}), outside their business hours of {{businessHoursStart}}–{{businessHoursEnd}}, Monday to Friday. You can still confirm the booking.",
   "booking_time_out_of_bounds_error": "The event type cannot be booked at this time. Could you try another time slot?",
   "bookings_v3_title": "Try the new bookings page",
   "bookings_v3_name": "Enhanced bookings",

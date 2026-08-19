@@ -46,6 +46,7 @@ const userSelect = {
   avatarUrl: true,
   username: true,
   name: true,
+  timeZone: true,
   weekStart: true,
   brandColor: true,
   darkBrandColor: true,
@@ -252,6 +253,22 @@ function isAvailableInTimeSlot(
   return isWithinPeriod;
 }
 
+/**
+ * The time zone the organizer's working hours are expressed in: the event's own schedule
+ * wins, then the owner's personal zone, then the first host's. This mirrors how
+ * availability resolves the zone server side (see `ScheduleRepository`), so the booker can
+ * be told about a slot using the same clock the organizer works by.
+ *
+ * Deliberately separate from `schedule.timeZone`, which stays untouched because
+ * `lockTimeZoneToggleOnBookingPage` only wants an explicitly configured schedule zone.
+ */
+const getOrganizerTimeZone = (event: {
+  schedule?: { timeZone: string | null } | null;
+  owner?: { timeZone: string } | null;
+  subsetOfHosts?: { user: { timeZone: string } }[];
+}): string | null =>
+  event.schedule?.timeZone ?? event.owner?.timeZone ?? event.subsetOfHosts?.[0]?.user?.timeZone ?? null;
+
 export type PublicEventType = Awaited<ReturnType<typeof getPublicEvent>>;
 
 export async function getEventTypeHosts({
@@ -340,6 +357,8 @@ export const getPublicEvent = async (
 
     return {
       ...defaultEvent,
+      // A dynamic group booking has no single organizer, so the first user stands in.
+      organizerTimeZone: users[0]?.timeZone ?? null,
       bookingFields: getBookingFieldsWithSystemFields({ ...defaultEvent, disableBookingTitle }),
       // Only return fields consumed by the booker.
       subsetOfUsers: users.map((user) => ({
@@ -557,6 +576,7 @@ export const getPublicEvent = async (
 
   return {
     ...eventWithUserProfiles,
+    organizerTimeZone: getOrganizerTimeZone(eventWithUserProfiles),
     bookerLayouts: bookerLayoutsSchema.parse(eventMetaData?.bookerLayouts || null),
     description: markdownToSafeHTML(eventWithUserProfiles.description),
     metadata: eventMetaData,

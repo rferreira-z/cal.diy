@@ -49,6 +49,7 @@ export type BookerEvent = Pick<
   | "lockTimeZoneToggleOnBookingPage"
   | "lockedTimeZone"
   | "schedule"
+  | "organizerTimeZone"
   | "seatsPerTimeSlot"
   | "title"
   | "description"
