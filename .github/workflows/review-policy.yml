@@ -1,0 +1,190 @@
+# ⚠️ SECURITY: This workflow runs with write permissions on untrusted PRs (pull_request_target / issue_comment).
+# Never checkout or execute PR code here — only .github/scripts from the default branch is loaded.
+# Evidence comments and the owner-approved label are only trusted from users with write access.
+#
+# Gate for .github/PR_REVIEW_POLICY.md: re-classifies the PR, checks the evidence posted by the
+# /revisar-pr skill and sets the `review-policy` commit status on the PR head SHA.
+name: Review Policy
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    branches:
+      - main
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to evaluate"
+        required: true
+        type: number
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Review Policy
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, 'review-policy-evidence'))
+    # Job-level so that filtered-out comments never enter the group and displace a queued evaluation.
+    # Never cancel a running evaluation; a newer pending run supersedes older pending ones, and each
+    # run re-reads the PR state from the API, so the latest run always reflects the latest state.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Evaluate review policy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const policy = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/review-policy.mjs`);
+            const { owner, repo } = context.repo;
+            const prNumber =
+              context.payload.pull_request?.number ??
+              context.payload.issue?.number ??
+              Number(context.payload.inputs?.pr_number);
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+            if (pr.state !== "open" || pr.base.ref !== context.payload.repository.default_branch) {
+              core.info(`Skipping PR #${prNumber}: state=${pr.state}, base=${pr.base.ref}`);
+              return;
+            }
+            const headSha = pr.head.sha;
+            const targetUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const setStatus = (state, description) =>
+              github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: headSha,
+                context: "review-policy",
+                state,
+                description: description.slice(0, 140),
+                target_url: targetUrl,
+              });
+
+            await setStatus("pending", "Evaluating review policy");
+
+            // Any error after this point must not leave the required status stuck in pending.
+            try {
+              const permissionCache = new Map();
+              async function hasWriteAccess(username) {
+                if (!permissionCache.has(username)) {
+                  let allowed = false;
+                  try {
+                    const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+                    allowed = ["admin", "maintain", "write"].includes(data.permission);
+                  } catch (e) {
+                    core.info(`Permission check failed for ${username}: ${e.message}`);
+                  }
+                  permissionCache.set(username, allowed);
+                }
+                return permissionCache.get(username);
+              }
+
+              // A push invalidates previous approvals. The gate does not depend on this cleanup (evidence
+              // is bound to the head SHA and owner-approved must postdate it); it keeps labels truthful.
+              let labels = pr.labels.map((l) => l.name);
+              if (context.eventName === "pull_request_target" && context.payload.action === "synchronize") {
+                for (const name of [policy.LABELS.autoApproved, policy.LABELS.ownerApproved]) {
+                  if (!labels.includes(name)) continue;
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name }).catch((e) => {
+                    if (e.status !== 404) throw e;
+                  });
+                  labels = labels.filter((l) => l !== name);
+                  core.info(`Removed stale label "${name}"`);
+                }
+              }
+
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100,
+              });
+              const classification = policy.classifyPullRequest({ files, totalFiles: pr.changed_files });
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: prNumber,
+                per_page: 100,
+              });
+              // Prefer the latest trusted evidence for the head SHA; otherwise keep the latest trusted one
+              // so the gate can explain why it is stale.
+              comments.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+              let evidenceComment = null;
+              let evidence = null;
+              for (const comment of comments) {
+                const marker = policy.parseEvidenceMarker(comment.body);
+                if (!marker) continue;
+                if (!(await hasWriteAccess(comment.user.login))) {
+                  core.info(`Ignoring evidence comment ${comment.id} by ${comment.user.login} (no write access)`);
+                  continue;
+                }
+                if (!evidence) {
+                  evidenceComment = comment;
+                  evidence = marker;
+                }
+                if (marker.sha === headSha) {
+                  evidenceComment = comment;
+                  evidence = marker;
+                  break;
+                }
+              }
+
+              const ownerApproval = {
+                present: labels.includes(policy.LABELS.ownerApproved),
+                trusted: false,
+                afterEvidence: false,
+              };
+              if (ownerApproval.present) {
+                const events = await github.paginate(github.rest.issues.listEvents, {
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  per_page: 100,
+                });
+                const labelEvent = events
+                  .filter((e) => e.event === "labeled" && e.label?.name === policy.LABELS.ownerApproved)
+                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                if (labelEvent) {
+                  ownerApproval.trusted = await hasWriteAccess(labelEvent.actor.login);
+                  ownerApproval.afterEvidence =
+                    !!evidenceComment && new Date(labelEvent.created_at) >= new Date(evidenceComment.updated_at);
+                  core.info(`"${policy.LABELS.ownerApproved}" added by ${labelEvent.actor.login} at ${labelEvent.created_at}`);
+                }
+              }
+
+              const result = policy.evaluateGate({ risk: classification.risk, headSha, evidence, ownerApproval });
+              await setStatus(result.state, result.description);
+
+              await core.summary
+                .addHeading(`Review policy: ${result.state}`)
+                .addRaw(`${result.description}\n\n`)
+                .addList([
+                  `PR #${prNumber} @ ${headSha}`,
+                  `Gate classification: ${classification.risk} risk`,
+                  ...classification.reasons,
+                  evidenceComment ? `Evidence: ${evidenceComment.html_url}` : "Evidence: none",
+                  `owner-approved: ${JSON.stringify(ownerApproval)}`,
+                ])
+                .write();
+              core.info(`${result.state}: ${result.description}`);
+            } catch (error) {
+              await setStatus("error", `Review policy evaluation failed: ${error.message}`);
+              throw error;
+            }
