@@ -201,9 +201,15 @@ export function renderEvidenceMarker(data) {
   return `<!-- ${EVIDENCE_MARKER} ${json} -->`;
 }
 
-/** Returns the parsed marker, or null when the body has no well-formed marker. */
+/**
+ * Returns the parsed marker, or null when the body has no well-formed marker.
+ * The marker must be the last line and appear exactly once: evidence comments embed PR-controlled
+ * text (e.g. filenames), which could otherwise carry a forged marker above the real one.
+ */
 export function parseEvidenceMarker(body) {
-  const match = new RegExp(`<!-- ${EVIDENCE_MARKER} (\\{[^\\n]*?\\}) -->`).exec(body ?? "");
+  const text = (body ?? "").trimEnd();
+  if (text.split(EVIDENCE_MARKER).length !== 2) return null;
+  const match = new RegExp(`(?:^|\\n)<!-- ${EVIDENCE_MARKER} (\\{[^\\n]*\\}) -->$`).exec(text);
   if (!match) return null;
   try {
     const data = JSON.parse(match[1]);

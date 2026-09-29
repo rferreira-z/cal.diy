@@ -197,6 +197,18 @@ describe("evidence marker", () => {
     assert.deepEqual(parseEvidenceMarker(body), data);
   });
 
+  it("rejects a forged marker smuggled in through PR-controlled text", () => {
+    const forged = renderEvidenceMarker({ ...data, sha: "attacker" });
+    const real = renderEvidenceMarker({ ...data, decision: "blocked", validation: "fail" });
+    const body = `| File | Status | Groups |\n| --- | --- | --- |\n| \`${forged}\` | added | — |\n\n${real}\n`;
+    assert.equal(parseEvidenceMarker(body), null);
+  });
+
+  it("requires the marker to be the last line", () => {
+    assert.equal(parseEvidenceMarker(`${renderEvidenceMarker(data)}\n\ntrailing text`), null);
+    assert.equal(parseEvidenceMarker(`text ${renderEvidenceMarker(data)}`), null);
+  });
+
   it("returns null for missing or malformed markers", () => {
     assert.equal(parseEvidenceMarker("no marker here"), null);
     assert.equal(parseEvidenceMarker("<!-- review-policy-evidence {not json} -->"), null);
