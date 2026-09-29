@@ -26,9 +26,11 @@ export const HIGH_RISK_GROUPS = [
     id: "scheduling-core",
     reason: "Slots, availability, bookings, event types or the booking UI",
     patterns: [
-      "packages/features/{slots,availability,schedules,bookings,busyTimes,calendars,eventtypes,selectedSlots,selectedCalendar,ooo,travelSchedule,holidays,timezone,cityTimezones,host,booking-audit,bookingReference,bookingReport,calendar-subscription,conferencing,noShow,assignment-reason,hashedLink,troubleshooter,di}/**",
+      "packages/features/{slots,availability,schedules,bookings,busyTimes,calendars,eventtypes,selectedSlots,selectedCalendar,ooo,travelSchedule,holidays,timezone,cityTimezones,host,booking-audit,bookingReference,bookingReport,calendar-subscription,conferencing,noShow,assignment-reason,hashedLink,troubleshooter,di,embed,video-call-guest,calVideoSettings}/**",
       "packages/features/{CalendarEventBuilder,handleMarkNoShow,get-cal-video-reference}.*",
       "packages/trpc/server/routers/viewer/{slots,availability,bookings,eventTypes,calendars,ooo,travelSchedules,holidays,calVideo}/**",
+      "packages/trpc/server/routers/{publicViewer,loggedInViewer}/**",
+      "apps/web/pages/api/book/**",
       "apps/web/modules/{availability,bookings,schedules,event-types,calendars,calendar-view,d,timezone,troubleshooter}/**",
       "apps/web/app/(booking-page-wrapper)/**",
       "apps/web/app/reschedule/**",
@@ -48,10 +50,12 @@ export const HIGH_RISK_GROUPS = [
   },
   {
     id: "integrations-notifications",
-    reason: "Calendar integrations, emails, SMS, webhooks, background tasks or crons",
+    reason: "Calendar and video integrations, emails, SMS, webhooks, background tasks or crons",
     patterns: [
       "packages/app-store/*calendar*/**",
       "packages/app-store/{_utils,_lib}/**",
+      "packages/app-store/{dailyvideo,googlevideo,huddle01video,jelly,jitsivideo,lyra,nextcloudtalk,office365video,shimmervideo,sylapsvideo,tandemvideo,webex,zoomvideo}/**",
+      "packages/app-store/*/lib/{CalendarService,VideoApiAdapter,PaymentService}.*",
       "packages/app-store/{_appRegistry,*.generated}.ts",
       "packages/lib/{CalendarService,CalendarAppError,connectedCalendar,sanitizeCalendarObject,delegationCredential}.*",
       "packages/lib/tasker/**",
@@ -69,7 +73,9 @@ export const HIGH_RISK_GROUPS = [
       "packages/prisma/**",
       "packages/kysely/**",
       "apps/api/**",
-      "packages/features/{auth,credentials,oauth,platform-oauth-client,api-keys-legacy}/**",
+      "packages/features/{auth,credentials,oauth,platform-oauth-client,api-keys-legacy,users,membership,credits,watchlist,blocklist,bot-detection}/**",
+      "packages/app-store/{alby,btcpayserver,hitpay,mock-payment-app,paypal,stripepayment}/**",
+      "apps/web/pages/api/**",
       "packages/trpc/server/{middlewares,procedures}/**",
       "packages/trpc/server/{trpc,createContext}.ts",
       "packages/trpc/server/routers/viewer/{auth,admin,apiKeys,credentials,oAuth,payments}/**",
@@ -232,11 +238,12 @@ export function evaluateGate({ risk, headSha, evidence, ownerApproval }) {
   if (!DECISIONS.includes(evidence.decision)) return fail(`Unknown decision "${evidence.decision}"`);
   if (evidence.decision === "blocked") return fail("Blocked by /revisar-pr: validation or CI failed");
 
+  if (evidence.validation !== "pass" || evidence.ci !== "pass") {
+    return fail("Approval requires passing validation and CI evidence");
+  }
+
   if (risk === "low") {
     if (evidence.decision !== "auto-approved") return fail(`Low risk but decision is ${evidence.decision}`);
-    if (evidence.validation !== "pass" || evidence.ci !== "pass") {
-      return fail("Auto-approval requires passing validation and CI evidence");
-    }
     return { state: "success", description: "Low risk: auto-approved by review policy" };
   }
 

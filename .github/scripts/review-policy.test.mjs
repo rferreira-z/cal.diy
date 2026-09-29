@@ -88,6 +88,15 @@ describe("classifyPullRequest: high risk", () => {
     ["packages/trpc/server/routers/viewer/slots/util.ts", "scheduling-core"],
     ["apps/web/modules/bookings/views/bookings-single-view.tsx", "scheduling-core"],
     ["packages/platform/atoms/booker/BookerPlatformWrapper.tsx", "scheduling-core"],
+    ["packages/trpc/server/routers/publicViewer/event.handler.ts", "scheduling-core"],
+    ["packages/trpc/server/routers/loggedInViewer/markNoShow.handler.ts", "scheduling-core"],
+    ["packages/features/embed/Embed.tsx", "scheduling-core"],
+    ["apps/web/pages/api/book/event.ts", "scheduling-core"],
+    ["apps/web/pages/api/integrations/stripepayment/webhook.ts", "data-api-security"],
+    ["packages/app-store/stripepayment/lib/PaymentService.ts", "data-api-security"],
+    ["packages/app-store/dailyvideo/lib/VideoApiAdapter.ts", "integrations-notifications"],
+    ["packages/app-store/some-new-app/lib/PaymentService.ts", "integrations-notifications"],
+    ["packages/features/users/repositories/UserRepository.ts", "data-api-security"],
     ["packages/dayjs/index.ts", "date-time"],
     ["packages/lib/availability.ts", "date-time"],
     ["packages/app-store/googlecalendar/lib/CalendarService.ts", "integrations-notifications"],
@@ -293,6 +302,18 @@ describe("evaluateGate", () => {
         ownerApproval: approved,
       });
       assert.equal(result.state, "failure");
+    });
+
+    it("rejects owner approval over failing or pending validation/CI evidence", () => {
+      for (const overrides of [{ validation: "fail" }, { ci: "fail" }, { ci: "pending" }]) {
+        const result = evaluateGate({
+          risk: "high",
+          headSha,
+          evidence: { ...high, ...overrides },
+          ownerApproval: approved,
+        });
+        assert.equal(result.state, "failure", JSON.stringify(overrides));
+      }
     });
 
     it("passes with a trusted, fresh owner-approved label", () => {

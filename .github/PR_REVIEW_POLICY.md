@@ -23,10 +23,10 @@ limit. It is a denylist: new areas of the codebase are low risk until added to a
 
 | Group | What it protects | Main paths |
 | --- | --- | --- |
-| `scheduling-core` | Slots, availability, bookings, event types, booking UI | `packages/features/{slots,availability,schedules,bookings,eventtypes,calendars,busyTimes,ooo,…}`, trpc `viewer/{slots,availability,bookings,eventTypes,…}`, `apps/web/modules/{availability,bookings,schedules,event-types,d,…}`, booking pages, `packages/platform/**`, `packages/embeds/**` |
+| `scheduling-core` | Slots, availability, bookings, event types, booking UI | `packages/features/{slots,availability,schedules,bookings,eventtypes,calendars,busyTimes,ooo,…}`, trpc `viewer/{slots,availability,bookings,eventTypes,…}`, `apps/web/modules/{availability,bookings,schedules,event-types,d,…}`, trpc `publicViewer`/`loggedInViewer`, booking pages and `apps/web/pages/api/book/**`, embed, `packages/platform/**`, `packages/embeds/**` |
 | `date-time` | Date, time zone and recurrence handling | `packages/dayjs/**`, `packages/lib` date/tz/availability modules |
-| `integrations-notifications` | Calendar sync, emails, SMS, webhooks, tasks, crons | `packages/app-store/*calendar*/**`, `packages/emails/**`, `packages/sms/**`, `packages/features/{webhooks,tasker,notifications}`, `apps/web/app/api/cron/**` |
-| `data-api-security` | Database, public API, auth, credentials, payments | `packages/prisma/**`, `packages/kysely/**`, `apps/api/**`, auth/credentials/oauth, trpc middlewares/procedures, `packages/lib/server/**` |
+| `integrations-notifications` | Calendar and video integrations, emails, SMS, webhooks, tasks, crons | `packages/app-store/*calendar*/**`, video/conferencing apps, any app `lib/{CalendarService,VideoApiAdapter,PaymentService}`, `packages/emails/**`, `packages/sms/**`, `packages/features/{webhooks,tasker,notifications}`, `apps/web/app/api/cron/**` |
+| `data-api-security` | Database, public API, auth, credentials, payments | `packages/prisma/**`, `packages/kysely/**`, `apps/api/**`, `apps/web/pages/api/**`, payment apps, auth/credentials/oauth, users/membership/credits, watchlist/blocklist/bot-detection, trpc middlewares/procedures, `packages/lib/server/**` |
 | `supply-chain-ci` | CI, dependencies, build/runtime config, agent instructions | `.github/**`, `**/package.json`, `yarn.lock`, `.env*`, `next.config.*`, `tsconfig*.json`, `Dockerfile*`, `CLAUDE.md`, `.claude/**` |
 
 Rules that apply to every group:
@@ -48,10 +48,10 @@ Rules that apply to every group:
 3. The `review-policy` workflow re-classifies the PR independently and sets the `review-policy`
    commit status on the head SHA:
    - **success** when the evidence is for the current head SHA and policy version, its risk matches
-     the gate's own classification, and either
-     - risk is low, decision is `auto-approved`, validation and CI passed; or
+     the gate's own classification, validation and CI passed, and either
+     - risk is low and decision is `auto-approved`; or
      - risk is high, decision is `needs-owner-review`, and a maintainer added `owner-approved`
-       **after** the latest evidence comment;
+       **after** the evidence comment for the head SHA was last written;
    - **failure** otherwise, with the reason in the status description and job summary.
 4. Any new push invalidates everything: the workflow removes `auto-approved` and `owner-approved`,
    the evidence no longer matches the head SHA, and `/revisar-pr` has to run again.
